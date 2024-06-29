@@ -1,32 +1,57 @@
-// users.js
 const express = require('express');
 const router = express.Router();
-const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const User = require('../model/User');
 
-// Get all users
-router.get('/', async (req, res) => {
+// Registration
+router.post('/register', async (req, res) => {
   try {
-    const users = await User.find().select('-password');
-    res.json(users);
+    const { username, password } = req.body;
+
+    // Check if username already exists
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Username already exists' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create new user
+    const newUser = new User({ username, password: hashedPassword });
+    await newUser.save();
+
+    res.status(201).json({ message: 'User registered successfully' });
   } catch (error) {
-    console.error('Error fetching users:', error);
+    console.error('Registration error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Disable user account
-router.put('/:id/disable', async (req, res) => {
+// Login
+router.post('/login', async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const { username, password } = req.body;
+
+    // Find user by username
+    const user = await User.findOne({ username });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    user.disabled = true;
-    await user.save();
-    res.json({ message: 'User disabled successfully' });
+    // Validate password
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(400).json({ message: 'Invalid password' });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign({ id: user._id }, 'secretkey', { expiresIn: '1h' });
+    res.json({ token });
   } catch (error) {
-    console.error('Error disabling user:', error);
+    console.error('Login error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
